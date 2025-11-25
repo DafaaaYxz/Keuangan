@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DompetKu - Aplikasi Keuangan</title>
+    
+    <!-- Tailwind CSS (Desain) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM (Mesin Aplikasi) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel (Penerjemah Kode) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; -webkit-tap-highlight-color: transparent; }
+        /* Animasi halus */
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Setup React ---
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Konstanta & Data ---
+        const formatRupiah = (number) => {
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0,
+            }).format(number);
+        };
+
+        const CATEGORIES = [
+            "Makanan & Minuman", "Transportasi", "Belanja", "Tagihan", 
+            "Hiburan", "Kesehatan", "Pendidikan", "Lainnya"
+        ];
+
+        const PERIODS = { DAILY: 'harian', WEEKLY: 'mingguan', MONTHLY: 'bulanan', ALL: 'semua' };
+
+        // --- Komponen Utama ---
+        function App() {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            
+            // Load data dari HP (LocalStorage)
+            const [transactions, setTransactions] = useState(() => {
+                const saved = localStorage.getItem('dompetku_transactions');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [savings, setSavings] = useState(() => {
+                const saved = localStorage.getItem('dompetku_savings');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [budgets, setBudgets] = useState(() => {
+                const saved = localStorage.getItem('dompetku_budgets');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            // Simpan otomatis saat ada perubahan
+            useEffect(() => localStorage.setItem('dompetku_transactions', JSON.stringify(transactions)), [transactions]);
+            useEffect(() => localStorage.setItem('dompetku_savings', JSON.stringify(savings)), [savings]);
+            useEffect(() => localStorage.setItem('dompetku_budgets', JSON.stringify(budgets)), [budgets]);
+
+            // Hitung Ringkasan
+            const summary = useMemo(() => {
+                const income = transactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+                const expense = transactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+                return { income, expense, balance: income - expense };
+            }, [transactions]);
+
+            return (
+                <div className="min-h-screen pb-20 md:pb-0 flex flex-col md:flex-row max-w-4xl mx-auto bg-white shadow-2xl min-h-screen">
+                    
+                    {/* Header Mobile */}
+                    <div className="md:hidden bg-emerald-600 text-white p-4 shadow-md sticky top-0 z-10 flex justify-between items-center">
+                        <div className="font-bold text-xl flex items-center gap-2">
+                            <span>👛</span> DompetKu
+                        </div>
+                        <div className="text-xs bg-emerald-700 px-2 py-1 rounded">
+                            {activeTab.toUpperCase()}
+                        </div>
+                    </div>
+
+                    {/* Navigasi Bawah (Mobile) */}
+                    <nav className="md:hidden fixed bottom-0 w-full bg-white border-t border-slate-200 flex justify-around p-2 z-20 pb-safe">
+                        <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon="📊" label="Home" />
+                        <NavButton active={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} icon="📝" label="Catat" />
+                        <NavButton active={activeTab === 'planning'} onClick={() => setActiveTab('planning')} icon="📉" label="Budget" />
+                        <NavButton active={activeTab === 'savings'} onClick={() => setActiveTab('savings')} icon="🐖" label="Tabung" />
+                    </nav>
+
+                    {/* Konten Utama */}
+                    <main className="flex-1 p-4 overflow-y-auto mb-16 md:mb-0">
+                        {activeTab === 'dashboard' && <DashboardView summary={summary} transactions={transactions} savings={savings} />}
+                        {activeTab === 'transactions' && <TransactionManager transactions={transactions} setTransactions={setTransactions} />}
+                        {activeTab === 'planning' && <BudgetPlanner budgets={budgets} setBudgets={setBudgets} transactions={transactions} />}
+                        {activeTab === 'savings' && <SavingsTracker savings={savings} setSavings={setSavings} transactions={transactions} setTransactions={setTransactions} />}
+                    </main>
+                </div>
+            );
+        }
+
+        // --- Komponen Kecil ---
+        function NavButton({ active, onClick, icon, label }) {
+            return (
+                <button onClick={onClick} className={`flex flex-col items-center p-2 rounded-lg w-full transition ${active ? 'text-emerald-600 font-bold bg-emerald-50' : 'text-slate-400'}`}>
+                    <span className="text-xl mb-1">{icon}</span>
+                    <span className="text-[10px]">{label}</span>
+                </button>
+            );
+        }
+
+        // --- DASHBOARD ---
+        function DashboardView({ summary, transactions, savings }) {
+            const recent = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+            const totalSavings = savings.reduce((acc, curr) => acc + curr.current, 0);
+
+            return (
+                <div className="space-y-6 fade-in">
+                    {/* Kartu Saldo */}
+                    <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                        <div className="absolute -right-4 -top-4 text-9xl opacity-10">💰</div>
+                        <p className="text-emerald-100 text-sm">Sisa Saldo Anda</p>
+                        <h2 className="text-3xl font-bold mt-1">{formatRupiah(summary.balance)}</h2>
+                        <div className="mt-4 pt-3 border-t border-white/20 text-xs flex justify-between">
+                            <span>Tabungan: {formatRupiah(totalSavings)}</span>
+                            <span>{new Date().toLocaleDateString('id-ID')}</span>
+                        </div>
+                    </div>
+
+                    {/* Ringkasan Masuk/Keluar */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                            <p className="text-xs text-green-600 mb-1">⬇️ Pemasukan</p>
+                            <p className="font-bold text-green-700">{formatRupiah(summary.income)}</p>
+                        </div>
+                        <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                            <p className="text-xs text-red-600 mb-1">⬆️ Pengeluaran</p>
+                            <p className="font-bold text-red-700">{formatRupiah(summary.expense)}</p>
+                        </div>
+                    </div>
+
+                    {/* Transaksi Terakhir */}
+                    <div>
+                        <h3 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wider">Terbaru</h3>
+                        <div className="space-y-3">
+                            {recent.length === 0 ? <p className="text-center text-slate-400 py-4 text-sm">Belum ada data.</p> : recent.map(t => (
+                                <div key={t.id} className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex justify-between items-center">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${t.type === 'income' ? 'bg-green-100' : 'bg-red-100'}`}>
+                                            {t.type === 'income' ? '💵' : '🛒'}
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-sm text-slate-800">{t.category}</p>
+                                            <p className="text-xs text-slate-400">{t.description || t.date}</p>
+                                        </div>
+                                    </div>
+                                    <span className={`font-bold text-sm ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                        {t.type === 'income' ? '+' : '-'}{formatRupiah(t.amount)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- HALAMAN TRANSAKSI ---
+        function TransactionManager({ transactions, setTransactions }) {
+            const [filter, setFilter] = useState('semua');
+            const [form, setForm] = useState({ type: 'expense', amount: '', category: 'Makanan & Minuman', date: new Date().toISOString().split('T')[0], desc: '' });
+
+            const handleAdd = (e) => {
+                e.preventDefault();
+                if (!form.amount) return;
+                setTransactions(prev => [...prev, { id: Date.now(), ...form, amount: parseInt(form.amount) }]);
+                setForm({ ...form, amount: '', desc: '' });
+                alert('Berhasil disimpan!');
+            };
+
+            const filteredData = transactions.filter(t => {
+                const d = new Date(t.date);
+                const now = new Date();
+                if (filter === 'harian') return d.toDateString() === now.toDateString();
+                if (filter === 'mingguan') return d >= new Date(now - 7 * 24 * 60 * 60 * 1000);
+                if (filter === 'bulanan') return d.getMonth() === now.getMonth();
+                return true;
+            }).sort((a,b) => new Date(b.date) - new Date(a.date));
+
+            return (
+                <div className="space-y-6 fade-in">
+                    {/* Form Input */}
+                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold mb-4">✍️ Catat Transaksi</h3>
+                        <form onSubmit={handleAdd} className="space-y-3">
+                            <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+                                {['income', 'expense'].map(type => (
+                                    <button key={type} type="button" onClick={() => setForm({...form, type})} 
+                                        className={`flex-1 py-2 rounded-md text-sm font-bold ${form.type === type ? (type === 'income' ? 'bg-white text-green-600 shadow' : 'bg-white text-red-600 shadow') : 'text-slate-400'}`}>
+                                        {type === 'income' ? 'Pemasukan' : 'Pengeluaran'}
+                                    </button>
+                                ))}
+                            </div>
+                            <input type="number" placeholder="0" value={form.amount} onChange={e=>setForm({...form, amount: e.target.value})} className="w-full p-3 bg-slate-50 rounded-lg border focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-lg" required />
+                            <select value={form.category} onChange={e=>setForm({...form, category: e.target.value})} className="w-full p-3 bg-slate-50 rounded-lg border outline-none text-sm">
+                                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <input type="date" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full p-3 bg-slate-50 rounded-lg border outline-none text-sm" required />
+                            <input type="text" placeholder="Catatan (Opsional)" value={form.desc} onChange={e=>setForm({...form, desc: e.target.value})} className="w-full p-3 bg-slate-50 rounded-lg border outline-none text-sm" />
+                            <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200">SIMPAN</button>
+                        </form>
+                    </div>
+
+                    {/* List Riwayat */}
+                    <div>
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="font-bold text-slate-700">Riwayat</h3>
+                            <select value={filter} onChange={e => setFilter(e.target.value)} className="text-xs bg-white border px-2 py-1 rounded-lg">
+                                <option value="semua">Semua</option>
+                                <option value="harian">Harian</option>
+                                <option value="mingguan">Mingguan</option>
+                                <option value="bulanan">Bulanan</option>
+                            </select>
+                        </div>
+                        <div className="space-y-2">
+                            {filteredData.map(t => (
+                                <div key={t.id} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-100 text-sm">
+                                    <div className="flex flex-col">
+                                        <span className="font-medium">{t.category}</span>
+                                        <span className="text-xs text-slate-400">{t.date}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className={t.type === 'income' ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>
+                                            {t.type === 'income' ? '+' : '-'}{formatRupiah(t.amount)}
+                                        </span>
+                                        <button onClick={() => confirm('Hapus?') && setTransactions(prev => prev.filter(x => x.id !== t.id))} className="text-slate-300">🗑️</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- HALAMAN BUDGET ---
+        function BudgetPlanner({ budgets, setBudgets, transactions }) {
+            const [newB, setNewB] = useState({ cat: CATEGORIES[0], limit: '' });
+
+            const saveBudget = (e) => {
+                e.preventDefault();
+                if(budgets.find(b => b.cat === newB.cat)) return alert('Sudah ada budget untuk kategori ini');
+                setBudgets([...budgets, { id: Date.now(), cat: newB.cat, limit: parseInt(newB.limit) }]);
+                setNewB({...newB, limit: ''});
+            };
+
+            const getUsage = (cat) => {
+                const now = new Date();
+                return transactions.filter(t => t.type === 'expense' && t.category === cat && new Date(t.date).getMonth() === now.getMonth()).reduce((a,b) => a + b.amount, 0);
+            };
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <h3 className="font-bold text-lg">⚠️ Batas Pengeluaran</h3>
+                    <form onSubmit={saveBudget} className="bg-white p-4 rounded-xl border flex gap-2">
+                        <select value={newB.cat} onChange={e=>setNewB({...newB, cat:e.target.value})} className="flex-1 bg-slate-50 p-2 rounded border text-sm">{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                        <input type="number" placeholder="Batas Rp" value={newB.limit} onChange={e=>setNewB({...newB, limit:e.target.value})} className="w-24 bg-slate-50 p-2 rounded border text-sm" required />
+                        <button className="bg-indigo-600 text-white p-2 rounded">➕</button>
+                    </form>
+                    
+                    <div className="space-y-3">
+                        {budgets.map(b => {
+                            const used = getUsage(b.cat);
+                            const pct = Math.min((used / b.limit) * 100, 100);
+                            const isOver = used > b.limit;
+                            return (
+                                <div key={b.id} className="bg-white p-4 rounded-xl border shadow-sm">
+                                    <div className="flex justify-between mb-2">
+                                        <span className="font-bold text-sm">{b.cat}</span>
+                                        <button onClick={()=>setBudgets(budgets.filter(x=>x.id!==b.id))} className="text-xs text-red-400">Hapus</button>
+                                    </div>
+                                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-1">
+                                        <div style={{width: `${pct}%`}} className={`h-full ${isOver ? 'bg-red-500' : 'bg-indigo-500'}`}></div>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span className={isOver ? 'text-red-600 font-bold' : 'text-slate-500'}>{formatRupiah(used)}</span>
+                                        <span className="text-slate-400">Max: {formatRupiah(b.limit)}</span>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            )
+        }
+
+        // --- HALAMAN TABUNGAN ---
+        function SavingsTracker({ savings, setSavings, transactions, setTransactions }) {
+            const [goal, setGoal] = useState({ name: '', target: '' });
+            const [add, setAdd] = useState({ id: null, val: '' });
+
+            const addGoal = (e) => {
+                e.preventDefault();
+                setSavings([...savings, { id: Date.now(), name: goal.name, target: parseInt(goal.target), current: 0 }]);
+                setGoal({ name: '', target: '' });
+            };
+
+            const nabung = (e, s) => {
+                e.preventDefault();
+                const nominal = parseInt(add.val);
+                setSavings(savings.map(x => x.id === s.id ? {...x, current: x.current + nominal} : x));
+                // Catat sbg pengeluaran
+                setTransactions([...transactions, { id: Date.now(), type: 'expense', amount: nominal, category: 'Lainnya', desc: `Tabungan: ${s.name}`, date: new Date().toISOString().split('T')[0] }]);
+                setAdd({ id: null, val: '' });
+                alert('Berhasil ditabung!');
+            };
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <h3 className="font-bold text-lg">🎯 Target Tabungan</h3>
+                    <form onSubmit={addGoal} className="bg-white p-4 rounded-xl border grid grid-cols-2 gap-2">
+                        <input placeholder="Nama (ex: HP Baru)" value={goal.name} onChange={e=>setGoal({...goal, name:e.target.value})} className="col-span-2 p-2 border rounded bg-slate-50 text-sm" required />
+                        <input type="number" placeholder="Target Rp" value={goal.target} onChange={e=>setGoal({...goal, target:e.target.value})} className="p-2 border rounded bg-slate-50 text-sm" required />
+                        <button className="bg-blue-600 text-white rounded font-bold">Buat</button>
+                    </form>
+
+                    <div className="grid gap-4">
+                        {savings.map(s => (
+                            <div key={s.id} className="bg-white p-4 rounded-xl border shadow-sm relative overflow-hidden">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="font-bold text-slate-700">{s.name}</span>
+                                    <button onClick={()=>setSavings(savings.filter(x=>x.id!==s.id))} className="text-xs text-red-300">❌</button>
+                                </div>
+                                <h4 className="text-xl font-bold text-blue-600 mb-2">{formatRupiah(s.current)} <span className="text-xs text-slate-400 font-normal">dari {formatRupiah(s.target)}</span></h4>
+                                <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-3">
+                                    <div style={{width: `${Math.min((s.current/s.target)*100, 100)}%`}} className="h-full bg-blue-500"></div>
+                                </div>
+                                
+                                {add.id === s.id ? (
+                                    <form onSubmit={(e)=>nabung(e, s)} className="flex gap-2">
+                                        <input type="number" autoFocus placeholder="Jml" value={add.val} onChange={e=>setAdd({...add, val:e.target.value})} className="flex-1 p-2 border rounded text-sm"/>
+                                        <button className="bg-green-600 text-white px-3 rounded">✓</button>
+                                        <button type="button" onClick={()=>setAdd({id:null, val:''})} className="bg-slate-200 px-3 rounded">✕</button>
+                                    </form>
+                                ) : (
+                                    <button onClick={()=>setAdd({id:s.id, val:''})} className="w-full bg-blue-50 text-blue-600 py-2 rounded-lg text-sm font-bold">➕ Tambah Saldo</button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )
+        }
+
+        // --- Render Aplikasi ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
